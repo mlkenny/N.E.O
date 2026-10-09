@@ -208,6 +208,23 @@ internal sealed class PipeServer
                     return JsonSerializer.Serialize(new { error = ex.Message });
                 }
 
+            case "excel_read_formulas":
+                try
+                {
+                    string? fSheet = null, fRange = null;
+                    if (paramsEl.ValueKind == JsonValueKind.Object)
+                    {
+                        if (paramsEl.TryGetProperty("sheet", out var s)) fSheet = s.GetString();
+                        if (paramsEl.TryGetProperty("range", out var r)) fRange = r.GetString();
+                    }
+                    var fData = await ExcelGateway.ReadFormulasAsync(fSheet, fRange);
+                    return JsonSerializer.Serialize(new { result = fData });
+                }
+                catch (Exception ex)
+                {
+                    return JsonSerializer.Serialize(new { error = ex.Message });
+                }
+
             case "excel_write":
                 try
                 {

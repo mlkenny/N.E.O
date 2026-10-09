@@ -252,6 +252,116 @@ internal static class ExcelGateway
         });
 
     // ────────────────────────────────────────────────────────────────────────
+    //  Tool: excel_read_formulas
+    // ────────────────────────────────────────────────────────────────────────
+
+    public static Task<object> ReadFormulasAsync(string? sheet, string? range) =>
+        RunOnMainAsync<object>(() =>
+        {
+            object? appObj = ExcelDnaUtil.Application;
+            if (appObj == null)
+                return new { error = "Excel application unavailable" };
+
+            dynamic app = appObj;
+            dynamic? wb = null, ws = null, rng = null;
+
+            try
+            {
+                wb = Try(() => app.ActiveWorkbook);
+                if (wb == null)
+                    return new { error = "No active workbook" };
+
+                if (!string.IsNullOrWhiteSpace(sheet))
+                {
+                    dynamic? worksheets = null;
+                    try
+                    {
+                        worksheets = wb.Worksheets;
+                        ws = Try(() => worksheets[sheet]);
+                    }
+                    finally { Release(worksheets); }
+                    if (ws == null)
+                        return new { error = $"Sheet '{sheet}' not found." };
+                }
+                else
+                {
+                    ws = Try(() => app.ActiveSheet);
+                    if (ws == null)
+                        return new { error = "No active sheet" };
+                }
+
+                if (!string.IsNullOrWhiteSpace(range))
+                {
+                    rng = Try(() => ws.Range[range]);
+                    if (rng == null)
+                        return new { error = $"Range '{range}' is invalid." };
+                }
+                else
+                {
+                    rng = Try(() => app.Selection);
+                    if (rng == null)
+                        return new { error = "Nothing selected" };
+                }
+
+                dynamic? rows = null, cols = null;
+                try
+                {
+                    rows = rng.Rows;
+                    cols = rng.Columns;
+                    int rowCount = (int)rows.Count;
+                    int colCount = (int)cols.Count;
+
+                    // Single cell → Formula returns a scalar
+                    if (rowCount == 1 && colCount == 1)
+                    {
+                        object? val = rng.Formula;
+                        return new
+                        {
+                            sheet = SafeString(() => (string)ws.Name),
+                            range = SafeString(() => (string)rng.Address),
+                            rows = rowCount,
+                            cols = colCount,
+                            formulas = new List<List<object?>> { new() { val ?? "" } }
+                        };
+                    }
+
+                    // Multi-cell → Formula returns a 1-based object[,]
+                    object[,] raw = rng.Formula;
+                    var data = new List<List<object?>>();
+                    for (int r = 1; r <= rowCount; r++)
+                    {
+                        var row = new List<object?>();
+                        for (int c = 1; c <= colCount; c++)
+                        {
+                            row.Add(raw[r, c] ?? "");
+                        }
+                        data.Add(row);
+                    }
+
+                    return new
+                    {
+                        sheet = SafeString(() => (string)ws.Name),
+                        range = SafeString(() => (string)rng.Address),
+                        rows = rowCount,
+                        cols = colCount,
+                        formulas = data
+                    };
+                }
+                finally
+                {
+                    Release(rows);
+                    Release(cols);
+                }
+            }
+            finally
+            {
+                Release(rng);
+                Release(ws);
+                Release(wb);
+            }
+        });
+
+    // ────────────────────────────────────────────────────────────────────────
     //  Tool: excel_write
     // ────────────────────────────────────────────────────────────────────────
 

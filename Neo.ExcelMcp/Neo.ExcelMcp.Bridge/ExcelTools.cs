@@ -57,6 +57,30 @@ public sealed class ExcelTools
         }
     }
 
+    [McpServerTool(Name = "excel_read_formulas")]
+    [Description(
+        "Reads formulas from cells in the active Excel workbook and returns them as a 2D array. " +
+        "Formula cells return the formula string (e.g. '=SUM(A1:A5)'). Non-formula cells return " +
+        "their value as a string. Empty cells return ''. " +
+        "If 'range' is omitted, reads the current user selection. " +
+        "If 'sheet' is omitted, uses the active sheet. " +
+        "Use this to snapshot formulas before a write, so rollback can restore them. " +
+        "Example: excel_read_formulas(sheet='Sheet1', range='A1:D10')")]
+    public static async Task<string> ReadFormulas(
+    PipeClient pipe,
+    [Description("Sheet name, e.g. 'Sheet1'. Omit to use the active sheet.")] string? sheet = null,
+    [Description("Cell range in A1 notation, e.g. 'A1:D10'. Omit to read the current selection.")] string? range = null)
+    {
+        try
+        {
+            return await pipe.CallAsync("excel_read_formulas", new { sheet, range });
+        }
+        catch (Exception ex)
+        {
+            return $"ERROR: Could not reach Excel.\n\n{ex.Message}";
+        }
+    }
+
     [McpServerTool(Name = "excel_write")]
     [Description(
         "Writes values to a range in the active Excel workbook. " +
