@@ -71,8 +71,37 @@ internal static class ExcelGateway
             try
             {
                 wb = Try(() => app.ActiveWorkbook);
+                if (wb == null)
+                    wb = Try(() => app.ActiveWindow?.Parent);
+                if (wb == null)
+                {
+                    dynamic? wbs = Try(() => app.Workbooks);
+                    if (wbs != null)
+                    {
+                        int wbCount = SafeInt(() => (int)wbs.Count);
+                        if (wbCount > 0)
+                            wb = Try(() => wbs[1]);
+                        Release(wbs);
+                    }
+                }
                 ws = Try(() => app.ActiveSheet);
+                if (ws == null && wb != null)
+                    ws = Try(() => wb.ActiveSheet);
+                if (ws == null && wb != null)
+                {
+                    dynamic? sheets = Try(() => wb.Worksheets);
+                    if (sheets != null)
+                    {
+                        int sheetCount = SafeInt(() => (int)sheets.Count);
+                        if (sheetCount > 0)
+                            ws = Try(() => sheets[1]);
+                        Release(sheets);
+                    }
+                }
+
                 sel = Try(() => app.Selection);
+                if (sel == null)
+                    sel = Try(() => ws?.Range["A1"]);
 
                 if (wb == null)
                     return MakeEmptyContext("No active workbook");
@@ -115,6 +144,7 @@ internal static class ExcelGateway
 
                 return new
                 {
+                    hwnd = SafeInt(() => (int)app.Hwnd),
                     workbook = workbookName,
                     activeSheet = sheetName,
                     selection = selectionAddress,
