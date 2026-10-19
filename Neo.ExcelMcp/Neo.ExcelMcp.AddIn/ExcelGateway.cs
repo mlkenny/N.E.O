@@ -169,117 +169,131 @@ internal static class ExcelGateway
     //  Tool: excel_read
     // ────────────────────────────────────────────────────────────────────────
 
-    public static Task<object> ReadRangeAsync(string? sheet, string? range) =>
-        RunOnMainAsync<object>(() =>
+    public static Task<object> ReadRangeAsync(string? sheet, string? range, int limit = 100, int startRow = 0) =>
+    RunOnMainAsync<object>(() =>
+    {
+        object? appObj = ExcelDnaUtil.Application;
+        if (appObj == null)
+            return new { error = "Excel application unavailable" };
+
+        dynamic app = appObj;
+        dynamic? wb = null, ws = null, rng = null;
+
+        try
         {
-            object? appObj = ExcelDnaUtil.Application;
-            if (appObj == null)
-                return new { error = "Excel application unavailable" };
+            wb = Try(() => app.ActiveWorkbook);
+            if (wb == null)
+                return new { error = "No active workbook" };
 
-            dynamic app = appObj;
-            dynamic? wb = null, ws = null, rng = null;
-
-            try
+            // Get the target sheet
+            if (!string.IsNullOrWhiteSpace(sheet))
             {
-                wb = Try(() => app.ActiveWorkbook);
-                if (wb == null)
-                    return new { error = "No active workbook" };
-
-                // Get the target sheet
-                if (!string.IsNullOrWhiteSpace(sheet))
-                {
-                    dynamic? worksheets = null;
-                    try
-                    {
-                        worksheets = wb.Worksheets;
-                        ws = Try(() => worksheets[sheet]);
-                    }
-                    finally
-                    {
-                        Release(worksheets);
-                    }
-                    if (ws == null)
-                        return new { error = $"Sheet '{sheet}' not found." };
-                }
-                else
-                {
-                    ws = Try(() => app.ActiveSheet);
-                    if (ws == null)
-                        return new { error = "No active sheet" };
-                }
-
-                // Get the range — if none specified, use current selection
-                if (!string.IsNullOrWhiteSpace(range))
-                {
-                    rng = Try(() => ws.Range[range]);
-                    if (rng == null)
-                        return new { error = $"Range '{range}' is invalid." };
-                }
-                else
-                {
-                    rng = Try(() => app.Selection);
-                    if (rng == null)
-                        return new { error = "Nothing selected" };
-                }
-
-                // Read values — Value2 avoids Currency/Date COM marshalling issues
-                dynamic? rows = null, cols = null;
+                dynamic? worksheets = null;
                 try
                 {
-                    rows = rng.Rows;
-                    cols = rng.Columns;
-                    int rowCount = (int)rows.Count;
-                    int colCount = (int)cols.Count;
+                    worksheets = wb.Worksheets;
+                    ws = Try(() => worksheets[sheet]);
+                }
+                finally
+                {
+                    Release(worksheets);
+                }
+                if (ws == null)
+                    return new { error = $"Sheet '{sheet}' not found." };
+            }
+            else
+            {
+                ws = Try(() => app.ActiveSheet);
+                if (ws == null)
+                    return new { error = "No active sheet" };
+            }
 
-                    // Single cell → Value2 returns a scalar, not an array
-                    if (rowCount == 1 && colCount == 1)
-                    {
-                        object? val = rng.Value2;
-                        return new
-                        {
-                            sheet = SafeString(() => (string)ws.Name),
-                            range = SafeString(() => (string)rng.Address),
-                            rows = rowCount,
-                            cols = colCount,
-                            values = new List<List<object?>> { new() { val ?? "" } }
-                        };
-                    }
+            // Get the range — if none specified, use current selection
+            if (!string.IsNullOrWhiteSpace(range))
+            {
+                rng = Try(() => ws.Range[range]);
+                if (rng == null)
+                    return new { error = $"Range '{range}' is invalid." };
+            }
+            else
+            {
+                rng = Try(() => app.Selection);
+                if (rng == null)
+                    return new { error = "Nothing selected" };
+            }
 
-                    // Multi-cell → Value2 returns a 1-based object[,]
-                    object[,] raw = rng.Value2;
-                    var data = new List<List<object?>>();
-                    for (int r = 1; r <= rowCount; r++)
-                    {
-                        var row = new List<object?>();
-                        for (int c = 1; c <= colCount; c++)
-                        {
-                            row.Add(raw[r, c] ?? "");
-                        }
-                        data.Add(row);
-                    }
+            // Read values — Value2 avoids Currency/Date COM marshalling issues
+            dynamic? rows = null, cols = null;
+            try
+            {
+                rows = rng.Rows;
+                cols = rng.Columns;
+                int rowCount = (int)rows.Count;
+                int colCount = (int)cols.Count;
 
+                // Single cell → Value2 returns a scalar, not an array
+                if (rowCount == 1 && colCount == 1)
+                {
+                    object? val = rng.Value2;
                     return new
                     {
                         sheet = SafeString(() => (string)ws.Name),
                         range = SafeString(() => (string)rng.Address),
                         rows = rowCount,
                         cols = colCount,
-                        values = data
+                        values = new List<List<object?>> { new() { val ?? "" } },
+                        total_rows = 1,
+                        start_row = 0
                     };
                 }
-                finally
+
+                // Multi-cell → Value2 returns a 1-based object[,]
+                object[,] raw = rng.Value2;
+                var data = new List<List<object?>>();
+
+                // Clamp the chunk to the requested limit
+                int endRow = Math.Min(rowCount, startRow + limit);
+
+                // Loop ONLY through the requested chunk (startRow is 0-based index)
+                for (int r = startRow + 1; r <= endRow; r++)
                 {
-                    Release(rows);
-                    Release(cols);
+                    var row = new List<object?>();
+                    for (int c = 1; c <= colCount; c++)
+                    {
+                        row.Add(raw[r, c] ?? "");
+                    }
+                    data.Add(row);
                 }
+
+                object result = new
+                {
+                    sheet = SafeString(() => (string)ws.Name),
+                    range = SafeString(() => (string)rng.Address),
+                    rows = endRow - startRow,
+                    cols = colCount,
+                    total_rows = rowCount,
+                    start_row = startRow,
+                    values = data,
+                    warning = endRow < rowCount
+                        ? $"Output truncated to {limit} rows. To read more, call excel_read again with start_row={endRow}."
+                        : null
+                };
+
+                return result;
             }
             finally
             {
-                Release(rng);
-                Release(ws);
-                Release(wb);
+                Release(rows);
+                Release(cols);
             }
-        });
+        }
+        finally
+        {
+            Release(rng);
+            Release(ws);
+            Release(wb);
+        }
+    });
 
     // ────────────────────────────────────────────────────────────────────────
     //  Tool: excel_read_formulas

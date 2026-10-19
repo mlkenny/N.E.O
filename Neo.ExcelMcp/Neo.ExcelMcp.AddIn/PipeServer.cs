@@ -195,12 +195,15 @@ internal sealed class PipeServer
                 try
                 {
                     string? sheet = null, range = null;
+                    int limit = 100, startRow = 0;
                     if (paramsEl.ValueKind == JsonValueKind.Object)
                     {
                         if (paramsEl.TryGetProperty("sheet", out var s)) sheet = s.GetString();
                         if (paramsEl.TryGetProperty("range", out var r)) range = r.GetString();
+                        if (paramsEl.TryGetProperty("limit", out var l) && l.ValueKind == JsonValueKind.Number) limit = l.GetInt32();
+                        if (paramsEl.TryGetProperty("start_row", out var sr) && sr.ValueKind == JsonValueKind.Number) startRow = sr.GetInt32();
                     }
-                    var data = await ExcelGateway.ReadRangeAsync(sheet, range);
+                    var data = await ExcelGateway.ReadRangeAsync(sheet, range, limit, startRow);
                     return JsonSerializer.Serialize(new { result = data });
                 }
                 catch (Exception ex)

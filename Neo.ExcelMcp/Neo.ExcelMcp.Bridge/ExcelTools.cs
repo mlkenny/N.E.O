@@ -38,18 +38,23 @@ public sealed class ExcelTools
 
     [McpServerTool(Name = "excel_read")]
     [Description(
-        "Reads cell values from the active Excel workbook and returns them as a 2D array. " +
-        "If 'range' is omitted, reads the current user selection. " +
-        "If 'sheet' is omitted, uses the active sheet. " +
-        "Examples: excel_read(sheet='Sheet1', range='A1:D10'), excel_read() for current selection.")]
+    "Reads cell values from the active Excel workbook and returns them as a 2D array. " +
+    "If 'range' is omitted, reads the current user selection. " +
+    "If 'sheet' is omitted, uses the active sheet. " +
+    "To prevent context overflow on large ranges, this tool returns a maximum of 100 rows. " +
+    "If the output is truncated, it will include a 'warning' and 'start_row' in the result. " +
+    "To read the next chunk, call it again with start_row=<next_row>. " +
+    "Examples: excel_read(sheet='Sheet1', range='A1:D10')")]
     public static async Task<string> ReadRange(
-        PipeClient pipe,
-        [Description("Sheet name, e.g. 'Sheet1'. Omit to use the active sheet.")] string? sheet = null,
-        [Description("Cell range in A1 notation, e.g. 'A1:D10' or 'B2'. Omit to read the current selection.")] string? range = null)
+    PipeClient pipe,
+    [Description("Sheet name, e.g. 'Sheet1'. Omit to use the active sheet.")] string? sheet = null,
+    [Description("Cell range in A1 notation, e.g. 'A1:D1000'. Omit to read the current selection.")] string? range = null,
+    [Description("Maximum number of rows to return. Defaults to 100.")] int limit = 100,
+    [Description("0-based row index to start reading from. Used to paginate large datasets.")] int start_row = 0)
     {
         try
         {
-            return await pipe.CallAsync("excel_read", new { sheet, range });
+            return await pipe.CallAsync("excel_read", new { sheet, range, limit, start_row });
         }
         catch (Exception ex)
         {
